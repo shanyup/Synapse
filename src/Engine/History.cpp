@@ -1,4 +1,7 @@
 #include "Engine/History.hpp"
+#include "Engine/Repository.hpp"
+#include "Engine/Locking.hpp"
+#include "Engine/Branches.hpp"
 #include "Core/Utils.hpp"
 #include <sha1.hpp>
 #include <fstream>
@@ -44,12 +47,7 @@ namespace Synapse::Engine {
         SHA1 tree_checksum; tree_checksum.update(tree_data);
         std::string tree_hash = tree_checksum.final();
 
-        std::string parent_hash = "";
-        fs::path main_branch_path = fs::path(".synapse") / "refs" / "heads" / "main";
-        if (fs::exists(main_branch_path)) {
-            std::ifstream branch_file(main_branch_path);
-            branch_file >> parent_hash;
-        }
+        std::string parent_hash = get_active_branch_hash();
 
         if (!parent_hash.empty()) {
             std::string last_tree_hash = extract_tree_from_commit(parent_hash);
@@ -80,27 +78,53 @@ namespace Synapse::Engine {
 
         Core::save_object_to_disk(commit_hash, commit_data);
 
-        if (!fs::exists(main_branch_path.parent_path())) fs::create_directories(main_branch_path.parent_path());
-        std::ofstream branch_out(main_branch_path);
-        branch_out << commit_hash;
+        // Update active branch reference, or HEAD directly if detached
+        fs::path head_path = fs::path(".synapse") / "HEAD";
+        bool detached = true;
+        std::string branch_ref_path = "";
+        if (fs::exists(head_path)) {
+            std::ifstream head_file(head_path);
+            std::string content;
+            if (std::getline(head_file, content)) {
+                while (!content.empty() && (content.back() == '\r' || content.back() == '\n' || content.back() == ' ')) {
+                    content.pop_back();
+                }
+                if (content.rfind("ref: ", 0) == 0) {
+                    detached = false;
+                    branch_ref_path = content.substr(5);
+                }
+            }
+        }
+
+        if (!detached) {
+            fs::path branch_file_path = fs::path(".synapse") / branch_ref_path;
+            if (!fs::exists(branch_file_path.parent_path())) {
+                fs::create_directories(branch_file_path.parent_path());
+            }
+            std::ofstream branch_out(branch_file_path);
+            if (branch_out.is_open()) {
+                branch_out << commit_hash;
+                branch_out.close();
+            }
+        } else {
+            std::ofstream head_out(head_path);
+            if (head_out.is_open()) {
+                head_out << commit_hash;
+                head_out.close();
+            }
+        }
 
         std::cout << "[" << commit_hash.substr(0, 7) << "] Commit successfully created: " << commit_message << "\n";
         return true;
     }
 
     void show_history() {
-        fs::path main_branch_path = fs::path(".synapse") / "refs" / "heads" / "main";
+        std::string current_commit_hash = get_active_branch_hash();
 
-        if (!fs::exists(main_branch_path)) {
+        if (current_commit_hash.empty()) {
             std::cout << "No commits have been made yet.\n";
             return;
         }
-
-        // First link in the chain: the most recent commit hash in refs/heads/main
-        std::string current_commit_hash;
-        std::ifstream branch_file(main_branch_path);
-        branch_file >> current_commit_hash;
-        branch_file.close();
 
         // Loop until the first commit (until parent is empty)
         while (!current_commit_hash.empty()) {
@@ -162,7 +186,7 @@ namespace Synapse::Engine {
         }
     }
 
-    bool checkout_commit(const std::string& target_commit_hash) {
+    bool checkout_commit(const std::string& target_commit_hash, bool update_head) {
         if (target_commit_hash.size() < 6) {
             std::cerr << "Error: Invalid or too short commit hash.\n";
             return false;
@@ -287,12 +311,49 @@ namespace Synapse::Engine {
                 fs::create_directories(target_file_path.parent_path());
             }
 
-            // Write file to disk
-            std::ofstream restore_file(target_file_path, std::ios::binary);
-            if (restore_file.is_open()) {
-                restore_file.write(real_file_content.data(), real_file_content.size());
-                restore_file.close();
+            bool restored_via_lfs = false;
+            // Check if the blob is an LFS pointer
+            if (real_file_content.rfind("synapse-lfs-v1", 0) == 0) {
+                std::stringstream ptr_ss(real_file_content);
+                std::string line_ptr;
+                std::string raw_hash = "";
+                while (std::getline(ptr_ss, line_ptr)) {
+                    if (line_ptr.rfind("oid sha1:", 0) == 0) {
+                        raw_hash = line_ptr.substr(9);
+                        while (!raw_hash.empty() && (raw_hash.back() == '\r' || raw_hash.back() == '\n' || raw_hash.back() == ' ')) {
+                            raw_hash.pop_back();
+                        }
+                    }
+                }
+                if (!raw_hash.empty()) {
+                    fs::path lfs_file_path = fs::path(".synapse") / "large_media" / raw_hash;
+                    if (fs::exists(lfs_file_path)) {
+                        try {
+                            if (fs::exists(target_file_path)) {
+                                fs::remove(target_file_path);
+                            }
+                            fs::copy_file(lfs_file_path, target_file_path, fs::copy_options::overwrite_existing);
+                            restored_via_lfs = true;
+                        }
+                        catch (const std::exception& e) {
+                            std::cerr << "Error: Failed to restore LFS file " << file_path_str << " - " << e.what() << "\n";
+                        }
+                    } else {
+                        std::cerr << "Warning: LFS file not found in large_media database: " << raw_hash << "\n";
+                    }
+                }
             }
+
+            if (!restored_via_lfs) {
+                // Write file to disk
+                std::ofstream restore_file(target_file_path, std::ios::binary);
+                if (restore_file.is_open()) {
+                    restore_file.write(real_file_content.data(), real_file_content.size());
+                    restore_file.close();
+                }
+            }
+
+            enforce_file_permissions(file_path_str);
         }
 
         // 7. UPDATE INDEX FILE
@@ -302,13 +363,14 @@ namespace Synapse::Engine {
             index_out.close();
         }
 
-        // 8. UPDATE BRANCH REFERENCE
-        fs::path main_branch_path = fs::path(".synapse") / "refs" / "heads" / "main";
-        if (!fs::exists(main_branch_path.parent_path())) fs::create_directories(main_branch_path.parent_path());
-        std::ofstream branch_out(main_branch_path);
-        if (branch_out.is_open()) {
-            branch_out << full_hash;
-            branch_out.close();
+        // 8. UPDATE HEAD REFERENCE IF NEEDED (DETACHED HEAD STATE)
+        if (update_head) {
+            fs::path head_path = fs::path(".synapse") / "HEAD";
+            std::ofstream head_out(head_path);
+            if (head_out.is_open()) {
+                head_out << full_hash;
+                head_out.close();
+            }
         }
 
         std::cout << "Checkout successful! Project restored to commit: [" << full_hash.substr(0, 7) << "]\n";

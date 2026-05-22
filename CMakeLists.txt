@@ -10,6 +10,8 @@ add_executable(synapse
     src/Engine/Repository.cpp
     src/Engine/Staging.cpp
     src/Engine/History.cpp
+    src/Engine/Locking.cpp
+    src/Engine/Branches.cpp
     libs/miniz/miniz.c
 )
 

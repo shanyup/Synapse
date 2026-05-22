@@ -3,6 +3,8 @@
 #include "Engine/Repository.hpp"
 #include "Engine/Staging.hpp"
 #include "Engine/History.hpp"
+#include "Engine/Locking.hpp"
+#include "Engine/Branches.hpp"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -62,10 +64,22 @@ int main(int argc, char* argv[]) {
     else if (command == "checkout")
     {
         if (argc < 3) {
-            std::cerr << "Usage: synapse checkout <commit_hash>\n";
+            std::cerr << "Usage: synapse checkout <branch_name_or_commit_hash>\n";
             return 1;
         }
-        Synapse::Engine::checkout_commit(argv[2]);
+        std::string target = argv[2];
+        if (!Synapse::Engine::checkout_branch(target)) {
+            Synapse::Engine::checkout_commit(target);
+        }
+    }
+    else if (command == "branch")
+    {
+        if (argc < 3) {
+            Synapse::Engine::list_branches();
+        }
+        else {
+            Synapse::Engine::create_branch(argv[2]);
+        }
     }
     else if (command == "config")
     {
@@ -78,6 +92,22 @@ int main(int argc, char* argv[]) {
     else if (command == "status")
     {
         Synapse::Engine::show_status();
+    }
+    else if (command == "lock")
+    {
+        if (argc < 3) {
+            std::cerr << "Usage: synapse lock <file_path>\n";
+            return 1;
+        }
+        Synapse::Engine::lock_file(argv[2]);
+    }
+    else if (command == "unlock")
+    {
+        if (argc < 3) {
+            std::cerr << "Usage: synapse unlock <file_path>\n";
+            return 1;
+        }
+        Synapse::Engine::unlock_file(argv[2]);
     }
     else {
         std::cerr << "Unknown command: " << command << "\n";

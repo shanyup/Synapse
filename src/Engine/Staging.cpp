@@ -1,8 +1,13 @@
 #include "Engine/Staging.hpp"
+#include "Engine/Locking.hpp"
+#include "Engine/Branches.hpp"
 #include "Core/Utils.hpp"
 #include <sha1.hpp>
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
+#include <algorithm>
+#include <cctype>
 
 namespace Synapse::Engine {
     std::vector<std::string> load_ignore_rules() {
@@ -45,6 +50,28 @@ namespace Synapse::Engine {
         return false;
     }
 
+    bool is_lfs_file(const fs::path& file_path) {
+        if (!fs::exists(file_path)) return false;
+
+        // 1. Size check (> 5MB)
+        try {
+            auto size = fs::file_size(file_path);
+            if (size > 5 * 1024 * 1024) return true;
+        }
+        catch (...) {}
+
+        // 2. Extension check
+        std::string ext = file_path.extension().string();
+        for (char& c : ext) c = std::tolower(c);
+
+        static const std::unordered_set<std::string> lfs_extensions = {
+            ".uasset", ".umap", ".fbx", ".wav", ".png", ".tga", ".jpg", 
+            ".jpeg", ".mp3", ".mp4", ".zip", ".rar", ".exe", ".dll", ".blend", ".obj"
+        };
+
+        return lfs_extensions.find(ext) != lfs_extensions.end();
+    }
+
     std::string hash_object(const std::string& target_file_path) {
         try {
             fs::path file_path(target_file_path);
@@ -53,12 +80,53 @@ namespace Synapse::Engine {
                 return "";
             }
             std::string file_content = Core::read_file_content(file_path);
-            std::string header = "blob " + std::to_string(file_content.size()) + '\0';
-            std::string store_data = header + file_content;
+            
+            bool lfs = is_lfs_file(file_path);
+            
+            SHA1 content_checksum;
+            content_checksum.update(file_content);
+            std::string raw_hash = content_checksum.final();
 
-            SHA1 checksum;
-            checksum.update(store_data);
-            std::string sha1_hash = checksum.final();
+            std::string sha1_hash;
+            std::string store_data;
+
+            if (lfs) {
+                // 1. Ensure .synapse/large_media directory exists
+                fs::path lfs_dir = fs::path(".synapse") / "large_media";
+                if (!fs::exists(lfs_dir)) {
+                    fs::create_directories(lfs_dir);
+                }
+
+                // 2. Copy/Write raw file to large_media with raw_hash as name
+                fs::path lfs_file_path = lfs_dir / raw_hash;
+                if (!fs::exists(lfs_file_path)) {
+                    std::ofstream lfs_out(lfs_file_path, std::ios::binary);
+                    if (lfs_out.is_open()) {
+                        lfs_out.write(file_content.data(), file_content.size());
+                        lfs_out.close();
+                    }
+                }
+
+                // 3. Create pointer content
+                std::string pointer_content = "synapse-lfs-v1\noid sha1:" + raw_hash + "\nsize " + std::to_string(file_content.size()) + "\n";
+                
+                // 4. Create standard blob from pointer
+                std::string header = "blob " + std::to_string(pointer_content.size()) + '\0';
+                store_data = header + pointer_content;
+
+                SHA1 pointer_checksum;
+                pointer_checksum.update(store_data);
+                sha1_hash = pointer_checksum.final();
+            }
+            else {
+                // Standard Zlib compressed blob
+                std::string header = "blob " + std::to_string(file_content.size()) + '\0';
+                store_data = header + file_content;
+
+                SHA1 std_checksum;
+                std_checksum.update(store_data);
+                sha1_hash = std_checksum.final();
+            }
 
             if (Core::save_object_to_disk(sha1_hash, store_data)) {
                 std::cout << sha1_hash << "\n";
@@ -72,8 +140,19 @@ namespace Synapse::Engine {
     void add_to_staging() {
         std::vector<std::string> ignore_rules = load_ignore_rules();
         fs::path index_path = fs::path(".synapse") / "index";
-        std::ofstream index_file(index_path);
 
+        // Load current index
+        std::unordered_map<std::string, std::string> current_index;
+        if (fs::exists(index_path)) {
+            std::ifstream file(index_path);
+            std::string hash, path;
+            while (file >> hash >> path) {
+                current_index[path] = hash;
+            }
+            file.close();
+        }
+
+        std::ofstream index_file(index_path);
         if (!index_file.is_open()) {
             std::cerr << "Error: Could not open staging index file.\n";
             return;
@@ -90,7 +169,48 @@ namespace Synapse::Engine {
                 if (c == '\\') c = '/';
             }
 
-            std::string file_hash = hash_object(rel_path_str);
+            std::string file_hash = "";
+            std::string lock_owner;
+            if (is_file_locked_by_other(rel_path_str, lock_owner)) {
+                // If locked by someone else, check if local file was modified compared to index
+                std::string local_hash = "";
+                std::string file_content = Core::read_file_content(current_path);
+
+                if (is_lfs_file(current_path)) {
+                    SHA1 content_checksum;
+                    content_checksum.update(file_content);
+                    std::string raw_hash = content_checksum.final();
+                    std::string pointer_content = "synapse-lfs-v1\noid sha1:" + raw_hash + "\nsize " + std::to_string(file_content.size()) + "\n";
+                    std::string header = "blob " + std::to_string(pointer_content.size()) + '\0';
+                    std::string store_data = header + pointer_content;
+                    SHA1 pointer_checksum;
+                    pointer_checksum.update(store_data);
+                    local_hash = pointer_checksum.final();
+                } else {
+                    std::string header = "blob " + std::to_string(file_content.size()) + '\0';
+                    std::string store_data = header + file_content;
+                    SHA1 checksum;
+                    checksum.update(store_data);
+                    local_hash = checksum.final();
+                }
+
+                auto it = current_index.find(rel_path_str);
+                if (it != current_index.end()) {
+                    if (it->second != local_hash) {
+                        std::cerr << "Error: File is locked by another developer (" << lock_owner << ") and has unstaged changes: " << rel_path_str << "\n";
+                        // Re-stage the old hash to prevent deleting it
+                        file_hash = it->second;
+                    } else {
+                        file_hash = it->second;
+                    }
+                } else {
+                    std::cerr << "Error: File path is locked by another developer (" << lock_owner << ") and cannot be staged: " << rel_path_str << "\n";
+                    continue; // Skip staging entirely if new and locked
+                }
+            } else {
+                file_hash = hash_object(rel_path_str);
+            }
+
             if (!file_hash.empty()) {
                 index_file << file_hash << " " << rel_path_str << "\n";
             }
@@ -135,12 +255,31 @@ namespace Synapse::Engine {
 
                 // Read file content and compute SHA-1 hash
                 std::string file_content = Core::read_file_content(current_path);
-                std::string header = "blob " + std::to_string(file_content.size()) + '\0';
-                std::string store_data = header + file_content;
+                std::string current_hash;
 
-                SHA1 checksum;
-                checksum.update(store_data);
-                std::string current_hash = checksum.final();
+                if (is_lfs_file(current_path)) {
+                    // Compute hash of the raw content
+                    SHA1 content_checksum;
+                    content_checksum.update(file_content);
+                    std::string raw_hash = content_checksum.final();
+
+                    // Reconstruct pointer content
+                    std::string pointer_content = "synapse-lfs-v1\noid sha1:" + raw_hash + "\nsize " + std::to_string(file_content.size()) + "\n";
+                    std::string header = "blob " + std::to_string(pointer_content.size()) + '\0';
+                    std::string store_data = header + pointer_content;
+
+                    SHA1 pointer_checksum;
+                    pointer_checksum.update(store_data);
+                    current_hash = pointer_checksum.final();
+                }
+                else {
+                    std::string header = "blob " + std::to_string(file_content.size()) + '\0';
+                    std::string store_data = header + file_content;
+
+                    SHA1 checksum;
+                    checksum.update(store_data);
+                    current_hash = checksum.final();
+                }
 
                 // Comparison logic
                 auto it = index_files.find(rel_path_str);
@@ -167,7 +306,7 @@ namespace Synapse::Engine {
         }
 
         // 4. Print color-coded status output (ANSI escape codes)
-        std::cout << "On branch main\n\n";
+        std::cout << "On branch " << get_active_branch_name() << "\n\n";
 
         if (modified_files.empty() && new_files.empty() && deleted_files.empty()) {
             std::cout << "nothing to commit, working tree clean\n";

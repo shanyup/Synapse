@@ -7,30 +7,30 @@ This document outlines the development phases and TODO list for transitioning Sy
 ## 📅 PHASE 1: Core Engine & Stability Updates (v1.1.0)
 *This phase focuses on core features required to manage large assets in game projects and make the system suitable for teamwork.*
 
-- [ ] **Large File Storage (Synapse LFS)**
+- [x] **Large File Storage (Synapse LFS)**
   - File size and extension check during `hash_object` (FBX, WAV, TGA, UASSET, etc.).
   - Move large binary files directly to the `.synapse/large_media/` directory without compression.
   - Save 3-line metadata pointer files (SHA-1 hash, size, etc.) in the object store (`.synapse/objects`) instead.
-- [ ] **In-Editor File Locking**
+- [x] **In-Editor File Locking**
   - Establish a central lock database: `.synapse/locks.json`.
   - Add `synapse lock <path>` and `synapse unlock <path>` commands to the core engine.
   - Prevent editing, staging, or committing assets locked by another developer (Exclusive Checkout).
-- [ ] **Branch Management**
+- [x] **Branch Management**
   - Implement branch files under `.synapse/refs/heads/` (`synapse branch <name>`).
   - Implement switching between branches (`synapse checkout <branch_name>`).
-- [ ] **Multi-Project Workspace Support**
-  - Support workspaces to enable a single Synapse client/UI to monitor and manage multiple independent repositories at once.
 
 ---
 
 ## 🎨 PHASE 2: User Experience & Desktop GUI (v1.2.0)
 *Building the visual application layer so that non-programming artists, designers, and producers can use the system without the command line.*
 
-- [ ] **Shared Engine Library (DLL)**
-  - Package the `Synapse::Engine` layer as a dynamic link library (`.dll` / `.so`).
 - [ ] **Desktop Application (GUI)**
   - Build a lightweight and high-performance desktop interface (e.g., using Qt, wxWidgets, or Dear ImGui).
   - Show modified/staged/untracked files dynamically with single-click commit buttons.
+- [ ] **Multi-Project Workspace Support**
+  - Support workspaces within the GUI to enable monitoring and managing multiple independent repositories at once.
+- [ ] **Shared Engine Library (DLL)**
+  - Package the `Synapse::Engine` layer as a dynamic link library (`.dll` / `.so`) to interface with the Desktop GUI and future editor plugins.
 - [ ] **Semantic Commits**
   - Introduce commit templates (`bug-fix`, `feature`, `refactor`, `asset-add`) in CLI/GUI.
   - Implement smart filtering and grouping in the log viewer based on semantic types.
@@ -76,7 +76,7 @@ This document outlines the development phases and TODO list for transitioning Sy
 
 ---
 
-## 🛠️ CURRENT CORE STATUS (v1.0.0 - STABLE CORE)
+## 🛠️ CURRENT CORE STATUS (v1.1.0 - STABLE CORE)
 - [x] `init`: Repository database structure and `.synapseignore` engine templates.
 - [x] `hash-object`: SHA-1 content hashing and object storage.
 - [x] `add`: Recursive file scanning, rule matching, and Windows/Linux path normalization.
@@ -84,3 +84,5 @@ This document outlines the development phases and TODO list for transitioning Sy
 - [x] `log`: Chronological parent-chain commit listing.
 - [x] `checkout`: Restores database blobs to workspace and aligns staging index and branch references.
 - [x] `status`: Live workspace-to-index diff with colorized CLI output.
+- [x] `lock` / `unlock`: Dynamic file locking/unlocking with permission enforcement on checkout and staging.
+- [x] `branch`: Dynamic listing, creation, and checkout of branches, with detached HEAD support.
