@@ -34,8 +34,10 @@ This document outlines the development phases and TODO list for transitioning Sy
 - [ ] **Semantic Commits**
   - Introduce commit templates (`bug-fix`, `feature`, `refactor`, `asset-add`) in CLI/GUI.
   - Implement smart filtering and grouping in the log viewer based on semantic types.
-- [ ] **Single-Click Installer (.exe Wizard)**
-  - Provide a standard Windows installer (`.exe`) compiled using Inno Setup or NSIS.
+- [ ] **Single-Click Installer (.exe Wizard) & Standalone PATH Setup**
+  - Provide a standard Windows installer (`.exe` or `.msi`) compiled using Inno Setup or WiX.
+  - Automatically register Synapse in the system `PATH` environment variable so it can be run from any command shell.
+  - Deliver a fully self-contained release package (portable ZIP and installer) that distributes the CLI and future GUI cleanly, without any source code or Git dependencies.
 
 ---
 
