@@ -1278,6 +1278,22 @@ function App() {
     }
   };
 
+  // Merge branch
+  const handleMerge = async (branchName) => {
+    if (!selectedRepoPath) return;
+    setIsLoading(true);
+    try {
+      const output = await synapse.mergeBranch(selectedRepoPath, branchName);
+      notify(output);
+      refreshRepositoryData();
+    } catch (error) {
+      notify(error.message, "error");
+      refreshRepositoryData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Create new branch
   const handleCreateBranch = async (e) => {
     e.preventDefault();
@@ -1511,9 +1527,27 @@ function App() {
                           handleCheckout(branchName);
                           setShowBranchDropdown(false);
                         }}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "10px" }}
                       >
-                        <Icons.Branch />
-                        <span>{branchName}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <Icons.Branch />
+                          <span>{branchName}</span>
+                        </div>
+                        {activeBranch !== branchName && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Are you sure you want to merge branch "${branchName}" into "${activeBranch}"?`)) {
+                                setShowBranchDropdown(false);
+                                await handleMerge(branchName);
+                              }
+                            }}
+                            style={{ padding: "2px 8px", fontSize: "0.7rem", height: "20px" }}
+                          >
+                            Merge
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

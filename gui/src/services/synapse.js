@@ -65,6 +65,11 @@ export async function createBranch(repoPath, branchName) {
   return await runCommand(repoPath, ['branch', branchName]);
 }
 
+// Merge branch into active branch
+export async function mergeBranch(repoPath, targetBranchName) {
+  return await runCommand(repoPath, ['merge', targetBranchName]);
+}
+
 // Get commits history
 export async function getHistory(repoPath) {
   try {

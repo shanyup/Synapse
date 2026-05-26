@@ -82,6 +82,16 @@ int main(int argc, char* argv[]) {
             Synapse::Engine::create_branch(argv[2]);
         }
     }
+    else if (command == "merge")
+    {
+        if (argc < 3) {
+            std::cerr << "Usage: synapse merge <branch_name>\n";
+            return 1;
+        }
+        if (!Synapse::Engine::merge_branch(argv[2])) {
+            return 1;
+        }
+    }
     else if (command == "config")
     {
         if (argc < 3) {

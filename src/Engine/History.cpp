@@ -49,7 +49,16 @@ namespace Synapse::Engine {
 
         std::string parent_hash = get_active_branch_hash();
 
-        if (!parent_hash.empty()) {
+        // Check if we are completing a merge (MERGE_HEAD exists)
+        std::string merge_parent_hash = "";
+        fs::path merge_head_path = fs::path(".synapse") / "MERGE_HEAD";
+        if (fs::exists(merge_head_path)) {
+            std::ifstream merge_head_file(merge_head_path);
+            merge_head_file >> merge_parent_hash;
+            merge_head_file.close();
+        }
+
+        if (!parent_hash.empty() && merge_parent_hash.empty()) {
             std::string last_tree_hash = extract_tree_from_commit(parent_hash);
             if (tree_hash == last_tree_hash) {
                 std::cout << "nothing to commit, working tree clean (No changes)\n";
@@ -67,6 +76,7 @@ namespace Synapse::Engine {
         std::stringstream commit_stream;
         commit_stream << "tree " << tree_hash << "\n";
         if (!parent_hash.empty()) commit_stream << "parent " << parent_hash << "\n";
+        if (!merge_parent_hash.empty()) commit_stream << "parent " << merge_parent_hash << "\n";
         commit_stream << "author " << author << " " << Core::get_current_timestamp() << "\n";
         commit_stream << "\n" << commit_message << "\n";
         std::string commit_content = commit_stream.str();
@@ -112,6 +122,11 @@ namespace Synapse::Engine {
                 head_out << commit_hash;
                 head_out.close();
             }
+        }
+
+        // Remove MERGE_HEAD if merge is complete
+        if (fs::exists(merge_head_path)) {
+            fs::remove(merge_head_path);
         }
 
         std::cout << "[" << commit_hash.substr(0, 7) << "] Commit successfully created: " << commit_message << "\n";
@@ -164,7 +179,9 @@ namespace Synapse::Engine {
                     std::string key;
                     line_ss >> key;
                     if (key == "parent") {
-                        line_ss >> next_parent_hash;
+                        if (next_parent_hash.empty()) {
+                            line_ss >> next_parent_hash;
+                        }
                     }
                     else if (key == "author") {
                         author_info = line.substr(7); // Trim "author " key

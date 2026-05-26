@@ -12,4 +12,5 @@ namespace Synapse::Engine {
     bool create_branch(const std::string& branch_name);
     void list_branches();
     bool checkout_branch(const std::string& branch_name);
+    bool merge_branch(const std::string& target_branch_name);
 }
