@@ -12,5 +12,7 @@ namespace Synapse::Engine {
     bool should_ignore(const fs::path& file_path, const std::vector<std::string>& ignore_rules);
     std::string hash_object(const std::string& target_file_path);
     void add_to_staging();
+    void add_path_to_staging(const std::string& target_path);
     void show_status();
+    bool is_lfs_file(const fs::path& file_path);
 }

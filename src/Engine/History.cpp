@@ -220,9 +220,12 @@ namespace Synapse::Engine {
         fs::path index_path = fs::path(".synapse") / "index";
         if (fs::exists(index_path)) {
             std::ifstream index_file(index_path);
-            std::string hash, path;
-            while (index_file >> hash >> path) {
-                current_files.insert(path);
+            std::string line;
+            while (std::getline(index_file, line)) {
+                if (line.length() > 41) {
+                    std::string path = line.substr(41);
+                    current_files.insert(path);
+                }
             }
             index_file.close();
         }
@@ -255,10 +258,10 @@ namespace Synapse::Engine {
         std::string line_find;
         while (std::getline(ss_find, line_find)) {
             if (line_find.empty()) continue;
-            std::stringstream line_ss(line_find);
-            std::string blob_hash, file_path_str;
-            line_ss >> blob_hash >> file_path_str;
-            target_files.insert(file_path_str);
+            if (line_find.length() > 41) {
+                std::string file_path_str = line_find.substr(41);
+                target_files.insert(file_path_str);
+            }
         }
 
         // 5. DESTRUCTIVELY DELETE FILES THAT ARE NOT IN THE TARGET FROM WORKSPACE
@@ -283,10 +286,10 @@ namespace Synapse::Engine {
 
         while (std::getline(ss, line)) {
             if (line.empty()) continue;
+            if (line.length() <= 41) continue;
 
-            std::stringstream line_ss(line);
-            std::string blob_hash, file_path_str;
-            line_ss >> blob_hash >> file_path_str;
+            std::string blob_hash = line.substr(0, 40);
+            std::string file_path_str = line.substr(41);
 
             fs::path target_file_path(file_path_str);
 

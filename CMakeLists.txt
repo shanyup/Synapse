@@ -4,6 +4,10 @@ project(Synapse)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 add_executable(synapse 
     main.cpp 
     src/Core/Utils.cpp
@@ -12,6 +16,7 @@ add_executable(synapse
     src/Engine/History.cpp
     src/Engine/Locking.cpp
     src/Engine/Branches.cpp
+    src/Engine/Diff.cpp
     libs/miniz/miniz.c
 )
 

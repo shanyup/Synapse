@@ -5,6 +5,7 @@
 #include "Engine/History.hpp"
 #include "Engine/Locking.hpp"
 #include "Engine/Branches.hpp"
+#include "Engine/Diff.hpp"
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -44,11 +45,11 @@ int main(int argc, char* argv[]) {
         Synapse::Engine::hash_object(argv[2]);
     }
     else if (command == "add") {
-        if (argc < 3 || std::string(argv[2]) != ".") {
-            std::cerr << "Usage: synapse add .\n";
+        if (argc < 3) {
+            std::cerr << "Usage: synapse add <path|.>\n";
             return 1;
         }
-        Synapse::Engine::add_to_staging();
+        Synapse::Engine::add_path_to_staging(argv[2]);
     }
     else if (command == "commit") {
         if (argc < 4 || std::string(argv[2]) != "-m") {
@@ -92,6 +93,14 @@ int main(int argc, char* argv[]) {
     else if (command == "status")
     {
         Synapse::Engine::show_status();
+    }
+    else if (command == "diff")
+    {
+        std::string target_path = "";
+        if (argc >= 3) {
+            target_path = argv[2];
+        }
+        Synapse::Engine::show_diff(target_path);
     }
     else if (command == "lock")
     {
