@@ -4,6 +4,22 @@ Son commit'ten itibaren Synapse VCS platformuna eklenen yeni özellikler ve hata
 
 ---
 
+## 🔵 Phase 3 — Dal Birleştirme (Branch Merge) Entegrasyonu
+
+### 1. 3-Way Merge & Fast-Forward (C++ Engine)
+* **Ortak Ata (LCA) Arama:** BFS ile commit geçmişi taranıp iki branch'in birleştiği en yakın ortak ata (merge base) bulunur.
+* **Akıllı Birleştirme:** Ortak ata (`base`), aktif branch (`ours`) ve hedef branch (`theirs`) arasındaki dosya ağaçları karşılaştırılıp fast-forward veya 3-way merge otomatik gerçekleştirilir.
+* **Çakışma (Conflict) Marker'ları:** Çakışma durumunda metin dosyalarına standart `<<<<<<< HEAD`, `=======`, `>>>>>>> <branch>` işaretçileri eklenir. Büyük/LFS binary dosyalar bozulmaması için otomatik pas geçilerek çakışma olarak raporlanır.
+* **Çift Ata (Dual-Parent) Merge Commits:** Birleştirme sonrasında `.synapse/MERGE_HEAD` dosyasındaki ikinci ata commit bilgisi okunarak çoklu parent desteğine sahip gerçek bir merge commit'i oluşturulur.
+* **Doğrusal Log Traversal:** `show_history` (synapse log) fonksiyonu, birleşen yan dal geçmişini ana dala karıştırmamak için yalnızca ilk ata (first-parent) üzerinden doğrusal ilerleyecek şekilde güncellendi.
+
+### 2. Arayüz Entegrasyonu (Tauri GUI)
+* **Merge Butonları:** Branch seçim dropdown menüsünde aktif olmayan dalların yanına bir "Merge" butonu yerleştirildi.
+* **Çakışma Bildirimleri ve Yönetimi:** Merge sırasında çakışma oluşursa kullanıcıya uyarı gösterilir ve çakışan dosyalar staged/unstaged alanları yerine "Conflicts" başlığı altında listelenir.
+
+---
+
+
 ## 🔴 P0 — Kritik Hata Düzeltmeleri & İyileştirmeler
 
 ### 1. Dosya Boyutu Sınırı ve UI Freeze Engelleme
